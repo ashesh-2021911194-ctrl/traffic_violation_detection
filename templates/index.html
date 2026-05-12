@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Traffic Violation Detector</title>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@400;500&display=swap"
+        rel="stylesheet" />
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0
+        }
+
+        :root {
+            --bg: #0a0c10;
+            --surface: #111318;
+            --surface2: #181c24;
+            --border: #1e2330;
+            --accent: #f0c040;
+            --accent2: #e05a2b;
+            --green: #1ecb6e;
+            --red: #e03c3c;
+            --text: #e8eaf0;
+            --muted: #5a6078;
+            --font-head: 'Syne', sans-serif;
+            --font-mono: 'DM Mono', monospace;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font-head);
+            min-height: 100vh;
+            overflow-x: hidden
+        }
+
+        /* grain overlay */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+            pointer-events: none;
+            z-index: 999;
+            opacity: .5;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1.5rem 2.5rem;
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            background: rgba(10, 12, 16, .92);
+            backdrop-filter: blur(12px);
+            z-index: 100;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: .75rem
+        }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: var(--accent);
+            border-radius: 6px;
+            display: grid;
+            place-items: center;
+        }
+
+        .logo-icon svg {
+            width: 20px;
+            height: 20px
+        }
+
+        .logo-text {
+            font-size: 1.1rem;
+            font-weight: 800;
+            letter-spacing: -.02em
+        }
+
+        .logo-text span {
+            color: var(--accent)
+        }
+
+        .badge {
+            font-family: var(--font-mono);
+            font-size: .7rem;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            padding: .25rem .6rem;
+            border-radius: 4px;
+            color: var(--muted);
+        }
+
+        main {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 3rem 2rem
+        }
+
+        /* hero */
+        .hero {
+            text-align: center;
+            margin-bottom: 3.5rem
+        }
+
+        .hero h1 {
+            font-size: clamp(2.2rem, 5vw, 3.8rem);
+            font-weight: 800;
+            line-height: 1.05;
+            letter-spacing: -.04em;
+            margin-bottom: 1rem;
+        }
+
+        .hero h1 em {
+            font-style: normal;
+            color: var(--accent)
+        }
+
+        .hero p {
+            color: var(--muted);
+            font-family: var(--font-mono);
+            font-size: .85rem;
+            letter-spacing: .05em
+        }
+
+        /* upload zone */
+        .upload-zone {
+            border: 2px dashed var(--border);
+            border-radius: 16px;
+            padding: 3rem 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color .2s, background .2s;
+            background: var(--surface);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-zone:hover,
+        .upload-zone.drag {
+            border-color: var(--accent);
+            background: rgba(240, 192, 64, .04);
+        }
+
+        .upload-zone input {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+            font-size: 0
+        }
+
+        .upload-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 12px;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            display: grid;
+            place-items: center;
+            margin: 0 auto 1.25rem;
+        }
+
+        .upload-icon svg {
+            width: 26px;
+            height: 26px;
+            stroke: var(--accent)
+        }
+
+        .upload-zone h2 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: .4rem
+        }
+
+        .upload-zone p {
+            font-family: var(--font-mono);
+            font-size: .78rem;
+            color: var(--muted)
+        }
+
+        .upload-zone .chosen {
+            margin-top: 1rem;
+            font-family: var(--font-mono);
+            font-size: .8rem;
+            color: var(--accent);
+            display: none;
+        }
+
+        /* process button */
+        .btn-process {
+            display: block;
+            width: 100%;
+            margin-top: 1.25rem;
+            padding: .9rem;
+            border: none;
+            border-radius: 10px;
+            background: var(--accent);
+            color: #0a0c10;
+            font-family: var(--font-head);
+            font-size: 1rem;
+            font-weight: 800;
+            letter-spacing: -.01em;
+            cursor: pointer;
+            transition: opacity .15s, transform .1s;
+        }
+
+        .btn-process:hover {
+            opacity: .88;
+            transform: translateY(-1px)
+        }
+
+        .btn-process:disabled {
+            opacity: .35;
+            cursor: not-allowed;
+            transform: none
+        }
+
+        /* progress */
+        #progress-section {
+            display: none;
+            margin-top: 2rem
+        }
+
+        .progress-label {
+            display: flex;
+            justify-content: space-between;
+            font-family: var(--font-mono);
+            font-size: .78rem;
+            color: var(--muted);
+            margin-bottom: .5rem;
+        }
+
+        .progress-bar {
+            height: 6px;
+            background: var(--surface2);
+            border-radius: 99px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--accent);
+            border-radius: 99px;
+            width: 0%;
+            transition: width .3s ease;
+        }
+
+        .status-msg {
+            margin-top: .75rem;
+            font-family: var(--font-mono);
+            font-size: .78rem;
+            color: var(--muted);
+            text-align: center;
+        }
+
+        /* results */
+        #results-section {
+            display: none;
+            margin-top: 3rem
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            gap: 1.5rem
+        }
+
+        @media(max-width:780px) {
+            .results-grid {
+                grid-template-columns: 1fr
+            }
+        }
+
+        .video-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            overflow: hidden
+        }
+
+        .video-card video {
+            width: 100%;
+            display: block;
+            background: #000
+        }
+
+        .video-footer {
+            padding: .75rem 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-top: 1px solid var(--border);
+        }
+
+        .video-footer span {
+            font-family: var(--font-mono);
+            font-size: .75rem;
+            color: var(--muted)
+        }
+
+        .btn-download {
+            font-family: var(--font-mono);
+            font-size: .75rem;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: .4rem .85rem;
+            border-radius: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: border-color .15s;
+        }
+
+        .btn-download:hover {
+            border-color: var(--accent);
+            color: var(--accent)
+        }
+
+        /* stats panel */
+        .stats-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem
+        }
+
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 1.25rem;
+        }
+
+        .stat-card h3 {
+            font-family: var(--font-mono);
+            font-size: .7rem;
+            letter-spacing: .1em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-bottom: .75rem;
+        }
+
+        .big-num {
+            font-size: 2.4rem;
+            font-weight: 800;
+            letter-spacing: -.04em;
+            line-height: 1
+        }
+
+        .big-num.red {
+            color: var(--red)
+        }
+
+        .big-num.green {
+            color: var(--green)
+        }
+
+        .class-list {
+            display: flex;
+            flex-direction: column;
+            gap: .5rem
+        }
+
+        .class-row {
+            display: flex;
+            align-items: center;
+            gap: .6rem
+        }
+
+        .class-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .class-dot.vio {
+            background: var(--red)
+        }
+
+        .class-dot.safe {
+            background: var(--green)
+        }
+
+        .class-name {
+            font-family: var(--font-mono);
+            font-size: .8rem;
+            flex: 1;
+            color: var(--text);
+        }
+
+        .class-count {
+            font-family: var(--font-mono);
+            font-size: .8rem;
+            font-weight: 500;
+            color: var(--muted);
+        }
+
+        .class-bar-wrap {
+            width: 60px;
+            height: 4px;
+            background: var(--surface2);
+            border-radius: 99px;
+            overflow: hidden;
+        }
+
+        .class-bar {
+            height: 100%;
+            border-radius: 99px;
+            transition: width .6s ease
+        }
+
+        .class-bar.vio {
+            background: var(--red)
+        }
+
+        .class-bar.safe {
+            background: var(--green)
+        }
+
+        /* new scan button */
+        .btn-new {
+            display: block;
+            width: 100%;
+            margin-top: 2rem;
+            padding: .8rem;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: transparent;
+            color: var(--muted);
+            font-family: var(--font-head);
+            font-size: .9rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: border-color .15s, color .15s;
+        }
+
+        .btn-new:hover {
+            border-color: var(--accent);
+            color: var(--accent)
+        }
+
+        /* toast */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: var(--red);
+            color: #fff;
+            font-family: var(--font-mono);
+            font-size: .8rem;
+            padding: .75rem 1.25rem;
+            border-radius: 8px;
+            opacity: 0;
+            transform: translateY(8px);
+            transition: opacity .2s, transform .2s;
+            pointer-events: none;
+            z-index: 999;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0)
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <div class="logo">
+            <div class="logo-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#0a0c10" stroke-width="2.5" stroke-linecap="round"
+                    stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 8v4l3 3" />
+                </svg>
+            </div>
+            <span class="logo-text">Violation<span>Lens</span></span>
+        </div>
+        <span class="badge">YOLOv8 · mAP@0.5 96.5%</span>
+    </header>
+
+    <main>
+        <div class="hero">
+            <h1>Detect <em>helmet</em> violations<br>in traffic footage</h1>
+            <p>// UPLOAD VIDEO → AI ANALYSIS → ANNOTATED OUTPUT</p>
+        </div>
+
+        <!-- Upload -->
+        <div class="upload-zone" id="drop-zone">
+            <input type="file" id="file-input" accept=".mp4,.avi,.mov,.mkv" />
+            <div class="upload-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+            </div>
+            <h2>Drop your traffic video here</h2>
+            <p>MP4 · AVI · MOV · MKV &nbsp;|&nbsp; max 500 MB</p>
+            <div class="chosen" id="chosen-name"></div>
+        </div>
+
+        <button class="btn-process" id="btn-process" disabled>Analyse Video</button>
+
+        <!-- Progress -->
+        <div id="progress-section">
+            <div class="progress-label">
+                <span id="prog-label">Processing…</span>
+                <span id="prog-pct">0%</span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="prog-fill"></div>
+            </div>
+            <div class="status-msg" id="status-msg">Initialising model…</div>
+        </div>
+
+        <!-- Results -->
+        <div id="results-section">
+            <div class="results-grid">
+                <div class="video-card">
+                    <video id="result-video" controls playsinline></video>
+                    <div class="video-footer">
+                        <span id="video-label">annotated output</span>
+                        <a class="btn-download" id="btn-download" href="#" download>↓ Download</a>
+                    </div>
+                </div>
+
+                <div class="stats-panel">
+                    <div class="stat-card">
+                        <h3>Total detections</h3>
+                        <div class="big-num" id="stat-total">—</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Violations found</h3>
+                        <div class="big-num red" id="stat-vio">—</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>By class</h3>
+                        <div class="class-list" id="class-list"></div>
+                    </div>
+                </div>
+            </div>
+            <button class="btn-new" id="btn-new">↩ Analyse another video</button>
+        </div>
+    </main>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const VIOLATION_CLASSES = new Set(['Helmet_Off', 'No_helmet']);
+
+        let selectedFile = null;
+        let pollTimer = null;
+
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const chosenName = document.getElementById('chosen-name');
+        const btnProcess = document.getElementById('btn-process');
+        const progSection = document.getElementById('progress-section');
+        const progFill = document.getElementById('prog-fill');
+        const progPct = document.getElementById('prog-pct');
+        const progLabel = document.getElementById('prog-label');
+        const statusMsg = document.getElementById('status-msg');
+        const resultsSection = document.getElementById('results-section');
+
+        // Drag & drop
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault(); dropZone.classList.remove('drag');
+            const file = e.dataTransfer.files[0];
+            if (file) setFile(file);
+        });
+        fileInput.addEventListener('change', () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
+
+        function setFile(file) {
+            selectedFile = file;
+            chosenName.textContent = '📎 ' + file.name;
+            chosenName.style.display = 'block';
+            btnProcess.disabled = false;
+        }
+
+        btnProcess.addEventListener('click', startUpload);
+
+        function startUpload() {
+            if (!selectedFile) return;
+            btnProcess.disabled = true;
+            progSection.style.display = 'block';
+            resultsSection.style.display = 'none';
+            setProgress(0, 'Uploading…');
+
+            const fd = new FormData();
+            fd.append('video', selectedFile);
+
+            fetch('/upload', { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) { showToast(data.error); resetUI(); return; }
+                    pollStatus(data.job_id);
+                })
+                .catch(() => { showToast('Upload failed'); resetUI(); });
+        }
+
+        function pollStatus(jobId) {
+            pollTimer = setInterval(() => {
+                fetch(`/status/${jobId}`)
+                    .then(r => r.json())
+                    .then(job => {
+                        if (job.status === 'processing' || job.status === 'queued') {
+                            const pct = job.total > 0 ? Math.round((job.progress / job.total) * 100) : 0;
+                            setProgress(pct, `Analysing frame ${job.progress} / ${job.total}`);
+                        }
+                        if (job.status === 'done') {
+                            clearInterval(pollTimer);
+                            setProgress(100, 'Done!');
+                            setTimeout(() => showResults(job), 400);
+                        }
+                    })
+                    .catch(() => { });
+            }, 800);
+        }
+
+        function setProgress(pct, msg) {
+            progFill.style.width = pct + '%';
+            progPct.textContent = pct + '%';
+            statusMsg.textContent = msg;
+        }
+
+        function showResults(job) {
+            progSection.style.display = 'none';
+            resultsSection.style.display = 'block';
+
+            const videoUrl = `/outputs/${job.output}`;
+            const vid = document.getElementById('result-video');
+            vid.src = videoUrl;
+
+            const dl = document.getElementById('btn-download');
+            dl.href = videoUrl;
+            dl.download = job.output;
+
+            document.getElementById('stat-total').textContent = job.total_det.toLocaleString();
+            document.getElementById('stat-vio').textContent = (job.violation_count || 0).toLocaleString();
+
+            // Class breakdown
+            const list = document.getElementById('class-list');
+            list.innerHTML = '';
+            const counts = job.detections || {};
+            const maxVal = Math.max(...Object.values(counts), 1);
+
+            const order = ['Rider', 'Bike', 'Helmet_On', 'No_helmet', 'Helmet_Off'];
+            const sorted = order.filter(k => counts[k]).concat(
+                Object.keys(counts).filter(k => !order.includes(k))
+            );
+
+            sorted.forEach(cls => {
+                const count = counts[cls] || 0;
+                const isVio = VIOLATION_CLASSES.has(cls);
+                const pct = Math.round((count / maxVal) * 100);
+
+                list.innerHTML += `
+      <div class="class-row">
+        <div class="class-dot ${isVio ? 'vio' : 'safe'}"></div>
+        <span class="class-name">${cls}</span>
+        <div class="class-bar-wrap">
+          <div class="class-bar ${isVio ? 'vio' : 'safe'}" style="width:${pct}%"></div>
+        </div>
+        <span class="class-count">${count.toLocaleString()}</span>
+      </div>`;
+            });
+
+            document.getElementById('video-label').textContent = job.output;
+        }
+
+        document.getElementById('btn-new').addEventListener('click', () => {
+            resultsSection.style.display = 'none';
+            progSection.style.display = 'none';
+            selectedFile = null;
+            fileInput.value = '';
+            chosenName.style.display = 'none';
+            btnProcess.disabled = true;
+            progFill.style.width = '0%';
+        });
+
+        function resetUI() {
+            btnProcess.disabled = false;
+            progSection.style.display = 'none';
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg; t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3500);
+        }
+    </script>
+</body>
+
+</html>

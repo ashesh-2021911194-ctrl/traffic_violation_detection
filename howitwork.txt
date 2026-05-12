@@ -1,0 +1,20 @@
+The file looks clean and correct. Here's a summary of what was added and how the side-by-side bike problem is solved:
+
+What was added:
+
+Location	Change
+app.py:30-31	TRIPLE_RIDING_MIN = 3, MAX_RIDER_BIKE_RATIO = 0.30 — tunable constants
+app.py:48	ALL_VIOLATION_CLASSES — includes Triple_Riding for the final violation count
+app.py:79-82	_intersection_area — box overlap helper
+app.py:85-124	assign_riders_to_bikes — the core assignment logic
+app.py:127-133	_draw_box — extracted drawing helper (was inline before)
+app.py:173-204	Refactored predict_frame to bucket detections, run assignment, and draw bikes red when violated
+How the side-by-side bike problem is handled:
+
+The assignment uses a two-tier strategy:
+
+Overlap-first with horizontal tie-breaking — if a rider overlaps multiple bikes (the side-by-side case), it goes to the bike whose x-center is horizontally closest to the rider's x-center. Since bikes are arranged left/right, each rider's midpoint will naturally be nearer its own bike even when bounding boxes touch.
+
+Distance fallback — riders that don't overlap any bike at all are assigned to the nearest bike, but only if within 30% of the frame diagonal (prevents assigning a pedestrian far away from an unrelated bike).
+
+If your model uses a different casing like "Bike" or "Rider", just update app.py:51-52 accordingly.

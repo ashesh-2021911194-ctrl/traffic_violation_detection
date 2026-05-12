@@ -1,0 +1,210 @@
+"""
+Traffic Violation Detection - YOLOv8 Flask App
+Run: python app.py
+"""
+
+import os
+import uuid
+import threading
+import subprocess
+from collections import Counter
+from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask_cors import CORS
+from werkzeug.utils import secure_filename
+from ultralytics import YOLO
+import cv2
+
+# ─────────────────────────────────────────────
+# CONFIG
+# ─────────────────────────────────────────────
+BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
+OUTPUT_FOLDER = os.path.join(BASE_DIR, "outputs")
+MODEL_PATH    = os.path.join(BASE_DIR, "model", "best_fixed.pt")
+
+ALLOWED_EXT   = {"mp4", "avi", "mov", "mkv"}
+CONFIDENCE    = 0.25
+IOU           = 0.45
+FRAME_SKIP    = 1   # 1 = every frame, 2 = every other frame (faster but less accurate)
+
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+
+app = Flask(__name__)
+CORS(app)
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500 MB
+
+# ─────────────────────────────────────────────
+# LOAD YOLO MODEL
+# ─────────────────────────────────────────────
+model = None
+
+# Violation classes shown in red, safe classes in green
+VIOLATION_CLASSES = {"Helmet_Off", "No_helmet"}
+
+COLOR_MAP = {}  # populated after model loads
+
+def load_model():
+    global model, COLOR_MAP
+    if not os.path.exists(MODEL_PATH):
+        print(f"[WARN] Model not found at {MODEL_PATH} — detections disabled.")
+        return
+    model = YOLO(MODEL_PATH)
+    for cls_id, cls_name in model.names.items():
+        if cls_name in VIOLATION_CLASSES:
+            COLOR_MAP[cls_id] = (0, 0, 255)    # RED  — violation
+        else:
+            COLOR_MAP[cls_id] = (0, 200, 80)   # GREEN — safe
+    print(f"[INFO] YOLOv8 loaded | classes: {list(model.names.values())}")
+
+load_model()
+
+# ─────────────────────────────────────────────
+# JOB STORE
+# ─────────────────────────────────────────────
+jobs: dict[str, dict] = {}
+
+# ─────────────────────────────────────────────
+# INFERENCE
+# ─────────────────────────────────────────────
+def predict_frame(frame_bgr):
+    results = model.predict(
+        source=frame_bgr,
+        conf=CONFIDENCE,
+        iou=IOU,
+        verbose=False,
+        device=0 if __import__('torch').cuda.is_available() else 'cpu'
+    )[0]
+
+    annotated   = frame_bgr.copy()
+    detections  = []
+
+    for box in results.boxes:
+        cls_id   = int(box.cls[0])
+        score    = float(box.conf[0])
+        cls_name = model.names[cls_id]
+        color    = COLOR_MAP.get(cls_id, (0, 200, 80))
+        x1, y1, x2, y2 = map(int, box.xyxy[0])
+
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+        label = f"{cls_name} {score:.2f}"
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1)
+        cv2.rectangle(annotated, (x1, y1 - th - 8), (x1 + tw + 6, y1), color, -1)
+        cv2.putText(annotated, label, (x1 + 3, y1 - 4),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+
+        detections.append({"class": cls_name, "score": round(score, 3),
+                           "box": [x1, y1, x2, y2]})
+    return annotated, detections
+
+
+def process_video(job_id: str, input_path: str):
+    raw_out   = os.path.join(OUTPUT_FOLDER, f"{job_id}_raw.mp4")
+    final_out = os.path.join(OUTPUT_FOLDER, f"{job_id}_out.mp4")
+
+    cap          = cv2.VideoCapture(input_path)
+    fps          = cap.get(cv2.CAP_PROP_FPS) or 25
+    w            = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h            = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    jobs[job_id].update({"total": total_frames, "status": "processing"})
+
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(raw_out, fourcc, fps, (w, h))
+
+    frame_idx      = 0
+    all_detections = []
+    prev_annotated = None
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        if model and frame_idx % FRAME_SKIP == 0:
+            annotated, dets = predict_frame(frame)
+            all_detections.extend(dets)
+            prev_annotated = annotated
+        else:
+            annotated = prev_annotated if prev_annotated is not None else frame
+
+        writer.write(annotated)
+        frame_idx += 1
+        jobs[job_id]["progress"] = frame_idx
+
+    cap.release()
+    writer.release()
+
+    # Re-encode to H.264 for browser playback
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", raw_out,
+             "-vcodec", "libx264", "-pix_fmt", "yuv420p", final_out],
+            check=True, capture_output=True
+        )
+        os.remove(raw_out)
+        out_file = final_out
+    except Exception:
+        out_file = raw_out
+
+    counts = dict(Counter(d["class"] for d in all_detections))
+    violation_count = sum(v for k, v in counts.items() if k in VIOLATION_CLASSES)
+
+    jobs[job_id].update({
+        "status":          "done",
+        "output":          os.path.basename(out_file),
+        "detections":      counts,
+        "total_det":       len(all_detections),
+        "violation_count": violation_count,
+    })
+
+
+# ─────────────────────────────────────────────
+# ROUTES
+# ─────────────────────────────────────────────
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+
+@app.route("/upload", methods=["POST"])
+def upload():
+    if "video" not in request.files:
+        return jsonify({"error": "No file part"}), 400
+    f = request.files["video"]
+    if not f.filename:
+        return jsonify({"error": "No selected file"}), 400
+    ext = f.filename.rsplit(".", 1)[-1].lower()
+    if ext not in ALLOWED_EXT:
+        return jsonify({"error": f"Unsupported format: {ext}"}), 400
+
+    job_id   = str(uuid.uuid4())[:8]
+    filename = secure_filename(f"{job_id}_{f.filename}")
+    save_path = os.path.join(UPLOAD_FOLDER, filename)
+    f.save(save_path)
+
+    jobs[job_id] = {"status": "queued", "progress": 0, "total": 1}
+    t = threading.Thread(target=process_video, args=(job_id, save_path), daemon=True)
+    t.start()
+
+    return jsonify({"job_id": job_id})
+
+
+@app.route("/status/<job_id>")
+def status(job_id):
+    job = jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Unknown job"}), 404
+    return jsonify(job)
+
+
+@app.route("/outputs/<filename>")
+def serve_output(filename):
+    return send_from_directory(OUTPUT_FOLDER, filename)
+
+
+if __name__ == "__main__":
+    print("[INFO] Starting → http://127.0.0.1:5000")
+    app.run(debug=True, port=5000)
