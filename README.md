@@ -58,7 +58,7 @@ pip install -r requirements.txt
 ```bash
 python app.py
 ```
-Then navigate to `http://localhost:5000` in your browser.
+Then navigate to `http://localhost:5001` in your browser.
 
 ### Command Line Detection
 ```bash
